@@ -5,7 +5,7 @@ from typing import List
 
 app = FastAPI(title="API Loja de Café - IFRN")
 
-DATABASE_URL = "postgresql://postgres:#Ngpc2008@localhost:5432/Loja%20de%20café"
+DATABASE_URL = "postgresql://postgres:%23Ngpc2008@localhost:5432/Loja%20de%20café"
 
 async def get_db_connection():
     try:
@@ -24,6 +24,10 @@ class ProdutoResponse(BaseModel):
     id_produto: int
     nome_produto: str
     preco: float
+
+class EstoqueResponse(BaseModel):
+    id_produto: int
+    quantidade: int
 
 
 @app.post("/produtos/criar", response_model=ProdutoResponse, status_code=status.HTTP_201_CREATED)
@@ -112,22 +116,22 @@ async def deletar_produto(id: int):
         await conn.close()
 
 
-@app.put("/estoque/atualizar/{id}", response_model=ProdutoResponse)
+@app.put("/estoque/atualizar/{id}", response_model=EstoqueResponse)
 async def atualizar_estoque(id: int, quantidade: int):
     conn = await get_db_connection()
     try:
         check_query = """
-            SELECT id_produto FROM public.produtos WHERE id_produto = $1;
-            """
+            SELECT id_produto FROM public.estoque WHERE id_produto = $1;
+        """
         exists = await conn.fetchval(check_query, id)
         if not exists:
-            raise HTTPException(status_code=404, detail="Produto não encontrado")
+            raise HTTPException(status_code=404, detail="Registro de estoque para este produto não encontrado")
 
         query = """
-            UPDATE public.produtos 
+            UPDATE public.estoque 
             SET quantidade = $1 
             WHERE id_produto = $2 
-            RETURNING id_produto, nome_produto, preco;
+            RETURNING id_produto, quantidade;
         """
         row = await conn.fetchrow(query, quantidade, id)
         return dict(row)
