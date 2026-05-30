@@ -26,7 +26,7 @@ class ProdutoResponse(BaseModel):
     preco: float
 
 
-@app.post("/items", response_model=ProdutoResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/produtos/criar", response_model=ProdutoResponse, status_code=status.HTTP_201_CREATED)
 async def criar_produto(produto: ProdutoSchema):
     conn = await get_db_connection()
     try:
@@ -41,7 +41,7 @@ async def criar_produto(produto: ProdutoSchema):
         await conn.close()
 
 
-@app.get("/items", response_model=List[ProdutoResponse])
+@app.get("/produtos", response_model=List[ProdutoResponse])
 async def listar_produtos():
     conn = await get_db_connection()
     try:
@@ -55,7 +55,7 @@ async def listar_produtos():
         await conn.close()
 
 
-@app.get("/items/{id}", response_model=ProdutoResponse)
+@app.get("/produtos/{id}", response_model=ProdutoResponse)
 async def buscar_produto_por_id(id: int):
     conn = await get_db_connection()
     try:
@@ -71,7 +71,7 @@ async def buscar_produto_por_id(id: int):
     finally:
         await conn.close()
 
-@app.put("/items/{id}", response_model=ProdutoResponse)
+@app.put("/produtos/atualizar/{id}", response_model=ProdutoResponse)
 async def atualizar_produto(id: int, produto: ProdutoSchema):
     conn = await get_db_connection()
     try:
@@ -94,7 +94,7 @@ async def atualizar_produto(id: int, produto: ProdutoSchema):
         await conn.close()
 
 
-@app.delete("/items/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/produtos/deletar/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deletar_produto(id: int):
     conn = await get_db_connection()
     try:
@@ -108,5 +108,28 @@ async def deletar_produto(id: int):
         query = "DELETE FROM public.produtos WHERE id_produto = $1;"
         await conn.execute(query, id)
         return None
+    finally:
+        await conn.close()
+
+
+@app.put("/estoque/atualizar/{id}", response_model=ProdutoResponse)
+async def atualizar_estoque(id: int, quantidade: int):
+    conn = await get_db_connection()
+    try:
+        check_query = """
+            SELECT id_produto FROM public.produtos WHERE id_produto = $1;
+            """
+        exists = await conn.fetchval(check_query, id)
+        if not exists:
+            raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+        query = """
+            UPDATE public.produtos 
+            SET quantidade = $1 
+            WHERE id_produto = $2 
+            RETURNING id_produto, nome_produto, preco;
+        """
+        row = await conn.fetchrow(query, quantidade, id)
+        return dict(row)
     finally:
         await conn.close()
