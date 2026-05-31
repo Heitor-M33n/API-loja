@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
-import asyncpg
 from typing import List
+import asyncpg
 
 app = FastAPI(title="API Loja de Café - IFRN")
 
