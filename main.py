@@ -17,8 +17,14 @@ async def get_db_connection():
         )
 
 class ProdutoSchema(BaseModel):
-    nome_produto: str
+    produto: str
+    estoque: int
     preco: float
+
+class ClienteSchema(BaseModel):
+    nome: str
+    email: str
+    cpf: str
 
 class ProdutoResponse(BaseModel):
     id_produto: int
@@ -29,22 +35,19 @@ class EstoqueResponse(BaseModel):
     id_produto: int
     quantidade: int
 
-
-@app.post("/produtos/criar", response_model=ProdutoResponse, status_code=status.HTTP_201_CREATED)
+#CREATE - produto
+@app.post("/produtos", response_model=ProdutoResponse, status_code=status.HTTP_201_CREATED)
 async def criar_produto(produto: ProdutoSchema):
     conn = await get_db_connection()
     try:
-        query = """
-            INSERT INTO public.produtos (nome_produto, preco) 
-            VALUES ($1, $2) 
-            RETURNING id_produto, nome_produto, preco;
-        """
-        row = await conn.fetchrow(query, produto.nome_produto, produto.preco)
+        row = await conn.fetchrow("""INSERT INTO public.produtos (produto, estoque, preco) VALUES ($1, $2, $3) 
+            RETURNING id, produto, estoque, preco;""", 
+            produto.nome, produto.estoque, produto.preco)
         return dict(row)
     finally:
         await conn.close()
 
-
+#READ - produto
 @app.get("/produtos", response_model=List[ProdutoResponse])
 async def listar_produtos():
     conn = await get_db_connection()
@@ -59,6 +62,7 @@ async def listar_produtos():
         await conn.close()
 
 
+#READ - produto
 @app.get("/produtos/{id}", response_model=ProdutoResponse)
 async def buscar_produto_por_id(id: int):
     conn = await get_db_connection()
@@ -75,7 +79,8 @@ async def buscar_produto_por_id(id: int):
     finally:
         await conn.close()
 
-@app.put("/produtos/atualizar/{id}", response_model=ProdutoResponse)
+#UPDATE - produto
+@app.put("/produtos/{id}", response_model=ProdutoResponse)
 async def atualizar_produto(id: int, produto: ProdutoSchema):
     conn = await get_db_connection()
     try:
@@ -97,8 +102,8 @@ async def atualizar_produto(id: int, produto: ProdutoSchema):
     finally:
         await conn.close()
 
-
-@app.delete("/produtos/deletar/{id}", status_code=status.HTTP_204_NO_CONTENT)
+#DELETE - produto
+@app.delete("/produtos/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deletar_produto(id: int):
     conn = await get_db_connection()
     try:
@@ -115,8 +120,14 @@ async def deletar_produto(id: int):
     finally:
         await conn.close()
 
+#CREATE - estoque
 
-@app.put("/estoque/atualizar/{id}", response_model=EstoqueResponse)
+#READ - estoque
+
+#READ - estoque
+
+#UPDATE - estoque
+@app.put("/estoque/{id}", response_model=EstoqueResponse)
 async def atualizar_estoque(id: int, quantidade: int):
     conn = await get_db_connection()
     try:
@@ -137,3 +148,5 @@ async def atualizar_estoque(id: int, quantidade: int):
         return dict(row)
     finally:
         await conn.close()
+
+#DELETE - estoque
