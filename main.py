@@ -1,11 +1,12 @@
 from fastapi import FastAPI, HTTPException, status
+from datetime import datetime
 from pydantic import BaseModel
 from typing import List
 import asyncpg
 
 app = FastAPI(title="API Loja de Café - IFRN")
 
-DATABASE_URL = "postgresql://postgres:%23Ngpc2008@localhost:5432/Loja%20de%20café"
+DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/api_loja" #Alterar
 
 async def get_db_connection():
     try:
@@ -16,6 +17,8 @@ async def get_db_connection():
             detail=f"Erro ao conectar ao banco de dados: {str(e)}"
         )
 
+
+#Models
 class ProdutoSchema(BaseModel):
     produto: str
     estoque: int
@@ -26,127 +29,223 @@ class ClienteSchema(BaseModel):
     email: str
     cpf: str
 
-class ProdutoResponse(BaseModel):
+class PedidoSchema(BaseModel):
+    id_cliente: int
     id_produto: int
-    nome_produto: str
+
+class ProdutoResponse(ProdutoSchema):
+    id: int
+
+class ClienteResponse(ClienteSchema):
+    id: int
+
+class PedidoResponse(PedidoSchema):
+    id: int
+    data: datetime
+
+class PedidoResponseJoin(PedidoResponse):
+    cliente: str
+    produto: str
     preco: float
 
-class EstoqueResponse(BaseModel):
-    id_produto: int
-    quantidade: int
+class PedidoPOST(PedidoSchema):
+    debitar_estoque: bool
 
-#CREATE - produto
+@app.get("/test")
+async def testar_conexão_postgres():
+    conn = await get_db_connection()
+    await conn.close()
+    return 'Conexão bem sucedida'
+
+
+
+#CREATE
 @app.post("/produtos", response_model=ProdutoResponse, status_code=status.HTTP_201_CREATED)
 async def criar_produto(produto: ProdutoSchema):
-    conn = await get_db_connection()
     try:
-        row = await conn.fetchrow("""INSERT INTO public.produtos (produto, estoque, preco) VALUES ($1, $2, $3) 
-            RETURNING id, produto, estoque, preco;""", 
-            produto.nome, produto.estoque, produto.preco)
+        conn = await get_db_connection()
+        row = await conn.fetchrow("""INSERT INTO public.produtos (produto, estoque, preco)
+            VALUES ($1, $2, $3) RETURNING id, produto, estoque, preco;""", 
+            produto.produto, produto.estoque, produto.preco)
         return dict(row)
     finally:
         await conn.close()
 
-#READ - produto
-@app.get("/produtos", response_model=List[ProdutoResponse])
-async def listar_produtos():
-    conn = await get_db_connection()
+@app.post("/clientes", response_model=ClienteResponse, status_code=status.HTTP_201_CREATED)
+async def criar_cliente(cliente: ClienteSchema):
     try:
-        query = """
-            SELECT id_produto, nome_produto, preco FROM public.produtos ORDER BY id_produto;
-        """
-        rows = await conn.fetch(query)
+        conn = await get_db_connection()
+        row = await conn.fetchrow("""INSERT INTO public.clientes (nome, email, cpf)
+            VALUES ($1, $2, $3) RETURNING id, nome, email, cpf;""", 
+            cliente.nome, cliente.email, cliente.cpf)
+        return dict(row)
+    finally:
+        await conn.close()
+
+@app.post("/pedidos", response_model=PedidoResponse, status_code=status.HTTP_201_CREATED)
+async def criar_pedido(pedido: PedidoPOST):
+    try:
+        conn = await get_db_connection()
+
+        #verifica se o produto existe
+        produto = await conn.fetchrow("""SELECT * FROM public.produtos WHERE id = $1""", pedido.id_produto)
+        if not produto:
+            raise HTTPException(status_code=404, detail='Produto não existe')
         
-        return [dict(row) for row in rows]
+        #verifica se tem estoque
+        if pedido.debitar_estoque:
+            if not dict(produto).get('estoque') > 0:
+                raise HTTPException(status_code=400, detail='Estoque insuficiente')
+
+        #verifica se o cliente existe
+        cliente = await conn.fetchrow("""SELECT * FROM public.clientes WHERE id = $1""", pedido.id_cliente)
+        if not cliente:
+            raise HTTPException(status_code=404, detail='Cliente não existe')
+
+        #faz o insert propriamente dito
+        row = await conn.fetchrow("""INSERT INTO public.pedidos (id_cliente, id_produto)
+            VALUES ($1, $2) RETURNING id, id_cliente, id_produto, data;""", 
+            pedido.id_cliente, pedido.id_produto)
+        
+        #altera o estoque
+        if pedido.debitar_estoque:
+            await conn.execute("""UPDATE public.produtos SET estoque = estoque - 1 WHERE id = $1""", pedido.id_produto)
+
+        return dict(row)
     finally:
         await conn.close()
 
 
-#READ - produto
-@app.get("/produtos/{id}", response_model=ProdutoResponse)
-async def buscar_produto_por_id(id: int):
-    conn = await get_db_connection()
+
+#READ
+@app.get("/produtos", response_model=List[ProdutoResponse], status_code=status.HTTP_200_OK)
+async def listar_produtos():
     try:
-        query = """
-            SELECT id_produto, nome_produto, preco FROM public.produtos WHERE id_produto = $1;
-            """
-        row = await conn.fetchrow(query, id)
-        
+        conn = await get_db_connection()
+        rows = await conn.fetch("""SELECT * FROM public.produtos ORDER BY id;""")
+        return [dict(row) for row in rows]
+    finally:
+        if conn:
+            await conn.close()
+
+@app.get("/produtos/{id}", response_model=ProdutoResponse, status_code=status.HTTP_200_OK)
+async def buscar_produto_por_id(id: int):
+    try:
+        conn = await get_db_connection()
+        row = await conn.fetchrow("""SELECT * FROM public.produtos WHERE id = $1;""", id)
         if not row:
             raise HTTPException(status_code=404, detail="Produto não encontrado")
             
         return dict(row)
     finally:
-        await conn.close()
+        if conn:
+            await conn.close()
 
-#UPDATE - produto
-@app.put("/produtos/{id}", response_model=ProdutoResponse)
-async def atualizar_produto(id: int, produto: ProdutoSchema):
-    conn = await get_db_connection()
+@app.get("/clientes", response_model=List[ClienteResponse], status_code=status.HTTP_200_OK) 
+async def listar_clientes():
     try:
-        check_query = """
-            SELECT id_produto FROM public.produtos WHERE id_produto = $1;
-            """
-        exists = await conn.fetchval(check_query, id)
-        if not exists:
-            raise HTTPException(status_code=404, detail="Produto não encontrado")
-            
-        query = """
-            UPDATE public.produtos 
-            SET nome_produto = $1, preco = $2 
-            WHERE id_produto = $3 
-            RETURNING id_produto, nome_produto, preco;
-        """
-        row = await conn.fetchrow(query, produto.nome_produto, produto.preco, id)
+        conn = await get_db_connection()
+        rows = await conn.fetch("""SELECT * FROM public.clientes""")
+        return [dict(row) for row in rows]
+    finally:
+        if conn:
+            await conn.close()
+
+@app.get("/clientes/{id}", response_model=ClienteResponse, status_code=status.HTTP_200_OK)
+async def buscar_cliente_por_id(id: int):
+    try:
+        conn = await get_db_connection()
+        row = await conn.fetchrow("""SELECT * FROM public.clientes WHERE id = $1""", id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+        return dict(row)
+    finally:
+        if conn:
+            await conn.close()
+
+@app.get("/pedidos", response_model=List[PedidoResponseJoin], status_code=status.HTTP_200_OK)
+async def listar_pedidos():
+    try:
+        conn = await get_db_connection()
+        rows = await conn.fetch("""SELECT pe.id, c.id AS id_cliente, pr.id AS id_produto, c.nome AS cliente, 
+            pr.produto, pr.preco AS preco, pe.data FROM public.pedidos pe
+            INNER JOIN public.produtos pr ON pe.id_produto = pr.id
+            INNER JOIN public.clientes c ON pe.id_cliente = c.id""")
+        return [dict(row) for row in rows]
+    finally:
+        if conn:
+            await conn.close()
+
+@app.get("/pedidos/{id}", response_model=PedidoResponse, status_code=status.HTTP_200_OK)
+async def buscar_pedido_por_id(id: int):
+    try:
+        conn = await get_db_connection()
+        row = await conn.fetchrow("""SELECT pe.id, c.id AS id_cliente, pr.id AS id_produto, c.nome AS cliente, 
+            pr.produto, pr.preco AS preco, pe.data FROM public.pedidos pe
+            INNER JOIN public.produtos pr ON pe.id_produto = pr.id
+            INNER JOIN public.clientes c ON pe.id_cliente = c.id WHERE pe.id = $1""", id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Pedido não encontrado")
+        return dict(row)
+    finally:
+        if conn:
+            await conn.close()
+
+
+
+#UPDATE
+@app.put("/produtos/{id}", response_model=ProdutoResponse, status_code=status.HTTP_200_OK)
+async def atualizar_produto(id: int, produto: ProdutoSchema):
+    try:
+        conn = await get_db_connection()
+        row = await conn.fetchrow("""UPDATE public.produtos SET produto = $1, estoque = $2, preco = $3
+            WHERE id = $4 RETURNING id, produto, estoque, preco;""", 
+            produto.produto, produto.estoque, produto.preco, id)
         return dict(row)
     finally:
         await conn.close()
 
-#DELETE - produto
+@app.put("/clientes/{id}", response_model=ClienteResponse, status_code=status.HTTP_200_OK)
+async def atualizar_cliente(id: int, cliente: ClienteSchema):
+    try:
+        conn = await get_db_connection()        
+        row = await conn.fetchrow("""UPDATE public.clientes SET nome = $1, email = $2, cpf = $3
+            WHERE id = $4 RETURNING id, nome, email, cpf;""",
+            cliente.nome, cliente.email, cliente.cpf, id)
+        return dict(row)
+    finally:
+        await conn.close()
+
+
+
+#DELETE
 @app.delete("/produtos/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deletar_produto(id: int):
-    conn = await get_db_connection()
     try:
-        check_query = """
-            SELECT id_produto FROM public.produtos WHERE id_produto = $1;
-            """
-        exists = await conn.fetchval(check_query, id)
-        if not exists:
+        conn = await get_db_connection()
+        row = await conn.fetchrow("DELETE FROM public.produtos WHERE id = $1 RETURNING *", id)
+        if not row:
             raise HTTPException(status_code=404, detail="Produto não encontrado")
-            
-        query = "DELETE FROM public.produtos WHERE id_produto = $1;"
-        await conn.execute(query, id)
-        return None
     finally:
         await conn.close()
 
-#CREATE - estoque
-
-#READ - estoque
-
-#READ - estoque
-
-#UPDATE - estoque
-@app.put("/estoque/{id}", response_model=EstoqueResponse)
-async def atualizar_estoque(id: int, quantidade: int):
-    conn = await get_db_connection()
+@app.delete("/clientes/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def deletar_cliente(id: int):
     try:
-        check_query = """
-            SELECT id_produto FROM public.estoque WHERE id_produto = $1;
-        """
-        exists = await conn.fetchval(check_query, id)
-        if not exists:
-            raise HTTPException(status_code=404, detail="Registro de estoque para este produto não encontrado")
-
-        query = """
-            UPDATE public.estoque 
-            SET quantidade = $1 
-            WHERE id_produto = $2 
-            RETURNING id_produto, quantidade;
-        """
-        row = await conn.fetchrow(query, quantidade, id)
-        return dict(row)
+        conn = await get_db_connection()
+        row = await conn.fetchrow("DELETE FROM public.clientes WHERE id = $1 RETURNING *", id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
     finally:
         await conn.close()
 
-#DELETE - estoque
+@app.delete("/pedidos/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def deletar_pedido(id: int):
+    try:
+        conn = await get_db_connection()
+        row = await conn.fetchrow("DELETE FROM public.pedidos WHERE id = $1 RETURNING *", id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Pedido não encontrado")
+    finally:
+        await conn.close()
