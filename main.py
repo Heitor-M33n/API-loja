@@ -2,11 +2,12 @@ from fastapi import FastAPI, HTTPException, status
 from datetime import datetime
 from pydantic import BaseModel
 from typing import List
+import bcrypt
 import asyncpg
 
 app = FastAPI(title="API Loja de Café - IFRN")
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/api_loja" #Alterar
+DATABASE_URL = "postgresql://postgres:%23Ngpc2008@localhost:5432/api_loja" #Alterar
 
 async def get_db_connection():
     try:
@@ -23,6 +24,22 @@ class ProdutoSchema(BaseModel):
     produto: str
     estoque: int
     preco: float
+
+class UsuarioSchema(BaseModel):
+    nome: str
+    sobrenome: str
+    email: str
+    senha: str
+
+class UsuarioResponse(BaseModel):
+    id: int
+    nome: str
+    sobrenome: str
+    email: str
+
+class LoginSchema(BaseModel):
+    email: str
+    senha: str
 
 class ClienteSchema(BaseModel):
     nome: str
@@ -79,6 +96,48 @@ async def criar_cliente(cliente: ClienteSchema):
             VALUES ($1, $2, $3) RETURNING id, nome, email, cpf;""", 
             cliente.nome, cliente.email, cliente.cpf)
         return dict(row)
+    finally:
+        await conn.close()
+
+@app.post("/usuarios", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
+async def criar_usuario(usuario: UsuarioSchema):
+    try:
+        conn = await get_db_connection()
+
+        senha_hash = bcrypt.hashpw(
+            usuario.senha.encode("utf-8"),
+            bcrypt.gensalt()
+        ).decode("utf-8")
+
+        row = await conn.fetchrow("""INSERT INTO public.usuarios (nome, sobrenome, email, senha)
+            VALUES ($1, $2, $3, $4) RETURNING id, nome, sobrenome, email; """,
+            usuario.nome, usuario.sobrenome, usuario.email, senha_hash)
+        return dict(row)
+    finally:
+        await conn.close()
+
+@app.post("/verificar-senha", status_code=status.HTTP_200_OK)
+async def verificar_senha(login: LoginSchema):
+    try:
+        conn = await get_db_connection()
+
+        usuario = await conn.fetchrow("""SELECT email, senha FROM public.usuarios WHERE email = $1""", 
+        login.email)
+
+        if usuario is None:
+            return {"Resultado": "Usuário não encontrado."}
+
+    
+        senha_correta = bcrypt.checkpw(
+            login.senha.encode("utf-8"),
+            usuario["senha"].encode("utf-8")
+        )
+
+        if senha_correta:
+            return {"Resultado": "Sucesso!"}
+        
+        return {"Resultado": "Senha incorreta!"}
+    
     finally:
         await conn.close()
 
