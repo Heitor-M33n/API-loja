@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS pedidos (
 
 CREATE TABLE IF NOT EXISTS usuarios (
     id SERIAL PRIMARY KEY,
-    nome VARCHAR(100),
-    sobrenome VARCHAR(100),
-    email VARCHAR(100) UNIQUE,
-    senha VARCHAR(255)
+    nome VARCHAR(100) NOT NULL,
+    sobrenome VARCHAR(100) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    senha VARCHAR(255) NOT NULL
 );
