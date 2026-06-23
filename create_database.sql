@@ -1,1 +1,0 @@
-CREATE DATABASE API_loja;

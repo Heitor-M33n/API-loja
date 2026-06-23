@@ -7,7 +7,7 @@ import asyncpg
 
 app = FastAPI(title="API Loja de Café - IFRN")
 
-DATABASE_URL = "postgresql://postgres:%23Ngpc2008@localhost:5432/api_loja" #Alterar
+DATABASE_URL = "postgresql://postgres:sql@localhost:5432/API-loja" #Alterar
 
 async def get_db_connection():
     try:
@@ -103,11 +103,7 @@ async def criar_cliente(cliente: ClienteSchema):
 async def criar_usuario(usuario: UsuarioSchema):
     try:
         conn = await get_db_connection()
-
-        senha_hash = bcrypt.hashpw(
-            usuario.senha.encode("utf-8"),
-            bcrypt.gensalt()
-        ).decode("utf-8")
+        senha_hash = bcrypt.hashpw(usuario.senha.encode("utf-8"), bcrypt.gensalt(rounds=14)).decode("utf-8")
 
         row = await conn.fetchrow("""INSERT INTO public.usuarios (nome, sobrenome, email, senha)
             VALUES ($1, $2, $3, $4) RETURNING id, nome, sobrenome, email; """,
@@ -120,18 +116,12 @@ async def criar_usuario(usuario: UsuarioSchema):
 async def verificar_senha(login: LoginSchema):
     try:
         conn = await get_db_connection()
+        usuario = await conn.fetchrow("""SELECT email, senha FROM public.usuarios WHERE email = $1""", login.email)
 
-        usuario = await conn.fetchrow("""SELECT email, senha FROM public.usuarios WHERE email = $1""", 
-        login.email)
-
-        if usuario is None:
+        if not usuario:
             return {"Resultado": "Usuário não encontrado."}
 
-    
-        senha_correta = bcrypt.checkpw(
-            login.senha.encode("utf-8"),
-            usuario["senha"].encode("utf-8")
-        )
+        senha_correta = bcrypt.checkpw(login.senha.encode("utf-8"), usuario["senha"].encode("utf-8"))
 
         if senha_correta:
             return {"Resultado": "Sucesso!"}
