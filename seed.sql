@@ -18,3 +18,8 @@ INSERT INTO public.pedidos (id_cliente, id_produto) VALUES
 	(3, 3),
 	(4, 3),
 	(5, 4);
+
+INSERT INTO public.usuarios (nome, sobrenome, email, senha) VALUES
+	('Heitor', 'Silva', 'heitor@email.com', '$2b$14$GjCkUX5f5Kjn20QvuV.tG.3ZOPSVWnCQu.S8NUcYEb.CXOMFynAHe'), --admin
+	('Nícolas', 'Gomes', 'nicolas@email.com', '$2b$14$/LT6ZxB0Ur0qKY7UKkmf.ej7xNre0Z.6p1aGXkTC4bBb.uXKRZDRO'), --nicolas
+	('Joaquim', 'Luiz', 'joaquim@email.com', '$2b$14$lW0KVwkoNmPIpukBHwo8k.o/94cd7wfaNlVtR1zjkDXI0i7L6yPQC') --senha
